@@ -33,12 +33,19 @@ class HTTPResponse(object):
         self.body = body
 
 class HTTPClient(object):
-    #def get_host_port(self,url):
+    def get_host_port(self,url):
+        url_parse = urllib.parse.urlparse(url)
+        host = url_parse.hostname
+        port = url_parse.port
+        if url_parse.scheme == "http":
+            port = 80
+        elif url_parse.scheme == "https":
+            port = 443
 
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
-        return None
+        
 
     def get_code(self, data):
 
@@ -48,11 +55,27 @@ class HTTPClient(object):
         return int(code)
 
     def get_headers(self,data):
-        return None
+        try:
+            header_index = data.index("\r\n\r\n")
+            header = data[:header_index]
+
+
+            return header
+        except ValueError:
+            print("Error: No header found ")
+            return None
 
     def get_body(self, data):
-        body = data.split("\r\n\r\n")[1]
-    
+        if data == None:
+            return None
+
+        try:
+            header_index = data.index("\r\n\r\n")
+        except ValueError:
+            print("Error: No header found ")
+            return None
+
+        body = data[header_index+4:]
         return body
     
     def sendall(self, data):
