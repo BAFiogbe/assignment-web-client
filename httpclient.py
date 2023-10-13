@@ -32,47 +32,53 @@ class HTTPResponse(object):
         self.code = code
         self.body = body
 
-
 class HTTPClient(object):
-    
-    def get_host_port(self, url):
-        parsed_url = urllib.parse.urlparse(url)
-        host = parsed_url.hostname or url
-        port = parsed_url.port or (443 if parsed_url.scheme == 'https' else 80)
-        return (host, port)
+    def get_host_port(self,url):
+        url_parse = urllib.parse.urlparse(url)
+        host = url_parse.hostname
+        port = url_parse.port
+        if url_parse.scheme == "http":
+            port = 80
+        elif url_parse.scheme == "https":
+            port = 443
 
     def connect(self, host, port):
-        addr = (host, port)
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.connect(addr)
+        self.socket.connect((host, port))
+        
 
     def get_code(self, data):
+        
         try:
             header_index = data.index("\r\n\r\n")
             header_data = data[:header_index].strip()
             headers = header_data.split("\r\n")
-            status_line = headers[0]
-            status_code = int(status_line.split(" ")[1])
+            status = headers[0]
+            status_code = int(status.split(" ")[1])
+
             return status_code
         except ValueError:
+            print("Error: No header found ")
             return 404
-
-    def get_headers(self, data):
+    def get_headers(self,data):
         try:
             header_index = data.index("\r\n\r\n")
-            headers = data[:header_index]
-            return headers
+            header = data[:header_index]
+
+
+            return header
         except ValueError:
-            print("Error: The string '\r\n\r\n' was not found in the data.")
+            print("Error: No header found ")
             return None
 
     def get_body(self, data):
-        if not data:
+        if data == None:
             return None
 
         try:
             header_index = data.index("\r\n\r\n")
         except ValueError:
+            print("Error: No header found ")
             return None
 
         body = data[header_index+4:]
@@ -97,42 +103,93 @@ class HTTPClient(object):
         return buffer.decode('utf-8')
 
     def GET(self, url, args=None):
-        host, port = self.get_host_port(url)
-        
-        request = f"GET {url} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
-        
-        self.connect(host, port)
-        self.sendall(request)
-        
-        response = self.recvall(self.socket)
-        self.close()
+        code = 500
+        body = ""
 
+        # parse url and host
+        parse_output = urllib.parse.urlparse(url)
+        host = parse_output.netloc.split(":")[0]
+        port = parse_output.port
+        
+        if parse_output.scheme != "http":
+            raise ValueError("Error: Invalid URL")
+        if parse_output.path == "":
+            parse_output = parse_output._replace(path="/")
+    
+        if port == None:
+            if parse_output.scheme == "http":
+                port = 80
+            elif parse_output.scheme == "https":
+                port = 443
+
+        # connect to host
+        self.connect(host, port)
+
+        # get request
+        header = "GET " + parse_output.path + " HTTP/1.1\r\n"
+        header += "Host: " + host + "\r\n"
+        header += "Accept: */*\r\n"
+        header += "Connection: close\r\n\r\n"
+        self.sendall(header)
+
+        # receive response
+        response = self.recvall(self.socket)
+
+        self.close()
 
         code = self.get_code(response)
         body = self.get_body(response)
-        headers = self.get_headers(response)
 
-        
-        
+
+
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
-        host, port = self.get_host_port(url)
+        code = 500
+        body = ""
+
+        # parse url and host
+        parse_output = urllib.parse.urlparse(url)
+        host = parse_output.netloc.split(":")[0]
+        port = parse_output.port
+        
+        if parse_output.scheme != "http":
+            raise ValueError("Error: Invalid URL")
+        if parse_output.path == "":
+            parse_output = parse_output._replace(path="/")
+    
+        if port == None:
+            if parse_output.scheme == "http":
+                port = 80
+            elif parse_output.scheme == "https":
+                port = 443
+
+        # connect to host
         self.connect(host, port)
 
-        headers = "Content-Type: application/x-www-form-urlencoded\r\n"
-        body = urllib.parse.urlencode(args) if args else ""
+        if args == None:
+            args = urllib.parse.urlencode("")
+        else:
+            args = urllib.parse.urlencode(args)
 
-        request = f"POST / HTTP/1.1\r\nHost: {host}\r\nContent-Length: {len(body)}\r\n{headers}\r\n{body}"
+        header = "POST " + parse_output.path + " HTTP/1.1\r\n"
+        header += "Host: " + host + "\r\n"
+        header += "Content-Type: application/x-www-form-urlencoded\r\n"
+        header += "Content-Length: " + str(len(args)) + "\r\n"
+        header += "Connection: close\r\n\r\n"
+        header += args
 
-        self.sendall(request)
+        self.sendall(header)
+
+        # get response
         response = self.recvall(self.socket)
         self.close()
-        
+
         code = self.get_code(response)
         body = self.get_body(response)
-        headers = self.get_headers(response)
-        
+
+
+
         return HTTPResponse(code, body)
 
     def command(self, url, command="GET", args=None):
